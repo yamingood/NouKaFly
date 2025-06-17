@@ -1,0 +1,449 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Recherche de vols</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/aos@2.3.1/dist/aos.css"/>
+    <style>
+      #loader {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255,255,255,0.8);
+        z-index: 9999;
+        display: none;
+        justify-content: center;
+        align-items: center;
+      }
+      .card:hover {
+        transform: scale(1.02);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15);
+      }
+      @keyframes fly {
+        0% { transform: translateX(0); }
+        50% { transform: translateX(5px); }
+        100% { transform: translateX(0); }
+      }
+      .fly-animation {
+        animation: fly 1s infinite ease-in-out;
+      }
+    </style>
+  </head>
+  <body class="bg-light">
+    <div id="loader">
+      <div class="text-center">
+        <img src="{% static 'images/plane_loader.webm' %}" alt="Chargement..." style="width: 80px;" />
+        <p class="mt-2">Recherche en cours...</p>
+      </div>
+    </div>
+    {% include "includes/navbar.html" %}
+    <div
+      class="p-5 mb-4 bg-image text-white rounded"
+      style="
+        background-image: url('{% static 'images/bg_recherche_vol.jpg' %}');
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        height: 400px;
+      "
+    >
+      <div class="container py-5">
+        <h1 class="display-4 fw-bold animate__animated animate__fadeInDown">Trouvez votre prochaine destination</h1>
+        <p class="lead animate__animated animate__fadeInUp animate__delay-1s">Recherchez facilement les lieux desservis par avion dans le monde entier.</p>
+      </div>
+    </div>
+
+    <div class="container py-4">
+      <form method="post">
+        {% csrf_token %}
+        <div class="row g-3 align-items-end">
+          <div class="col-md-3 position-relative" data-aos="fade-up">
+            <label for="from_query" class="form-label">Pays de départ</label>
+            <input type="text" class="form-control" id="from_query" name="from_query"
+                   value="{{ from_query }}" placeholder="Ex: France" autocomplete="off" />
+            <div id="from_results" class="bg-white border rounded shadow-sm position-absolute z-3"
+                 style="max-height: 200px; overflow-y: auto;"></div>
+          </div>
+          <div class="col-md-3 position-relative" data-aos="fade-up">
+            <label for="to_query" class="form-label">Pays d'arrivée</label>
+            <input type="text" class="form-control" id="to_query" name="to_query"
+                   value="{{ to_query }}" placeholder="Ex: Canada" autocomplete="off" />
+            <input type="hidden" id="from_query_id" name="from_query_id" value="{{ from_query_id|default:request.POST.from_query_id }}">
+            <input type="hidden" id="to_query_id" name="to_query_id" value="{{ to_query_id|default:request.POST.to_query_id }}">
+            <div id="to_results" class="bg-white border rounded shadow-sm position-absolute z-3"
+                 style="max-height: 200px; overflow-y: auto;"></div>
+          </div>
+          <div class="col-md-1" data-aos="fade-up">
+            <label for="date_depart" class="form-label">Date de départ</label>
+            <input type="date" class="form-control" id="date_depart" name="date_depart"
+                   value="{{ date_depart }}" />
+          </div>
+          <div class="col-md-1" data-aos="fade-up">
+            <label for="date_retour" class="form-label">Date de retour</label>
+            <input type="date" class="form-control" id="date_retour" name="date_retour"
+                   value="{{ date_retour }}" />
+          </div>
+          <div class="col-md-1" data-aos="fade-up">
+            <label for="nb_adultes" class="form-label">Passagers</label>
+            <select class="form-select" id="nb_adultes" name="nb_adultes">
+              {% for i in "123456789" %}
+              <option value="{{ i }}" {% if i == nb_adultes %}selected{% endif %}>{{ i }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-1" data-aos="fade-up">
+            <label for="cabin_class" class="form-label">Classe</label>
+            <select class="form-select" id="cabin_class" name="cabin_class">
+              <option value="ECONOMY" {% if cabin_class == "ECONOMY" %}selected{% endif %}>Éco</option>
+              <option value="BUSINESS" {% if cabin_class == "BUSINESS" %}selected{% endif %}>Business</option>
+              <option value="PREMIUM_ECONOMY" {% if cabin_class == "PREMIUM_ECONOMY" %}selected{% endif %}>Premium</option>
+              <option value="FIRST" {% if cabin_class == "FIRST" %}selected{% endif %}>Première</option>
+            </select>
+          </div>
+          <input type="hidden" id="page" name="page" value="1" />
+          <input type="hidden" id="sort" name="sort" value="{{ sort|default:"BEST" }}">
+          <div class="col-md-1" data-aos="fade-up">
+            <button type="submit" class="btn btn-primary w-100">
+              <img src="{% static 'images/airplane.png' %}" alt="Rechercher" class="fly-animation" style="height: 30px;" />
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+    <div class="container">
+      {% if vols %}
+        <h3 class="mt-4">Offres de vols</h3>
+
+        <!-- Formulaire de tri -->
+        <div class="mt-4 pb-4 d-flex justify-content-center">
+          <form method="post" class="d-flex align-items-center gap-2 shadow-sm p-3 rounded bg-white border" style="max-width: 500px;">
+            {% csrf_token %}
+            <input type="hidden" name="from_query_id" value="{{ request.POST.from_query_id }}">
+            <input type="hidden" name="to_query_id" value="{{ request.POST.to_query_id }}">
+            <input type="hidden" name="from_query" value="{{ request.POST.from_query }}">
+            <input type="hidden" name="to_query" value="{{ request.POST.to_query }}">
+            <input type="hidden" name="date_depart" value="{{ request.POST.date_depart }}">
+            <input type="hidden" name="date_retour" value="{{ request.POST.date_retour }}">
+            <input type="hidden" name="nb_adultes" value="{{ request.POST.nb_adultes }}">
+            <input type="hidden" name="page" value="1">
+
+            <label for="sort_select" class="form-label mb-0 me-2 fw-semibold">
+              <i class="bi bi-funnel-fill me-1 text-primary"></i>Tri :
+            </label>
+            <select name="sort" id="sort_select" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+              <option value="CHEAPEST" {% if sort == "CHEAPEST" %}selected{% endif %}>Prix croissant</option>
+              <option value="BEST" {% if sort == "BEST" or not sort %}selected{% endif %}>Meilleure offre</option>
+              <option value="FASTEST" {% if sort == "FASTEST" %}selected{% endif %}>Temps le plus court</option>
+            </select>
+          </form>
+        </div>
+
+        <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+          {% for vol in vols %}
+            {% with leg=vol.segments.0.legs.0 carrier=vol.segments.0.legs.0.carriersData.0 %}
+            <div class="col" data-aos="fade-up" data-aos-delay="{{ forloop.counter0|add:"100" }}">
+              <div class="card h-100 shadow-sm">
+                <img src="{{ carrier.logo }}" class="card-img-top p-3" style="height: 100px; object-fit: contain;" alt="{{ carrier.name }}">
+                <div class="card-body">
+                  <h5 class="card-title">{{ carrier.name }} </h5><small>{{ leg.flightInfo.carrierInfo.operatingCarrier }}{{ leg.flightInfo.flightNumber }}</small>
+                  <p class="card-text">
+                    <strong>Départ :</strong> {{ leg.departureAirport.cityName }} ({{ leg.departureAirport.code }})<br />
+                    <strong>Arrivée :</strong> {{ leg.arrivalAirport.cityName }} ({{ leg.arrivalAirport.code }})<br />
+                    {% with dep=leg.departureTime|slice:":16" arr=leg.arrivalTime|slice:":16" %}
+                    <strong>Départ :</strong> {{ dep|slice:":10" }} à {{ dep|slice:"11:16" }}<br />
+                    <strong>Arrivée :</strong> {{ arr|slice:":10" }} à {{ arr|slice:"11:16" }}<br />
+                    {% endwith %}
+                    {% with price=vol.travellerPrices.0.travellerPriceBreakdown.total %}
+                    <strong>Prix :</strong> {{ price.units }}.{{ price.nanos|stringformat:"09d"|slice:":2" }} {{ price.currencyCode }}
+                    {% endwith %}
+                    <strong>Classe :</strong> {{ leg.cabinClass|title }}<br />
+                  </p>
+
+                  <div class="mt-3">
+                    {% if leg.travellerCabinLuggage %}
+                      <span class="badge bg-success me-2">
+                        <i class="bi bi-suitcase"></i> {{ leg.travellerCabinLuggage.maxPiece }} Cabine
+                      </span>
+                    {% endif %}
+                    {% if leg.travellerCheckedLuggage %}
+                      <span class="badge bg-info">
+                        <i class="bi bi-suitcase-fill"></i> Enregistré
+                      </span>
+                    {% endif %}
+                  </div>
+                  <button class="btn btn-outline-primary btn-sm mt-3 animate__animated animate__fadeInUp" onclick="loadFlightDetails('{{ vol.token }}')">
+                    + de détails
+                  </button>
+                </div>
+              </div>
+            </div>
+            {% endwith %}
+          {% endfor %}
+        </div>
+      {% endif %}
+
+    {% if vols %}
+      <div class="mt-4 d-flex justify-content-center gap-3">
+        <form method="post" class="d-inline">
+          {% csrf_token %}
+          <input type="hidden" name="from_query_id" value="{{ request.POST.from_query_id }}">
+          <input type="hidden" name="to_query_id" value="{{ request.POST.to_query_id }}">
+          <input type="hidden" name="from_query" value="{{ request.POST.from_query }}">
+          <input type="hidden" name="to_query" value="{{ request.POST.to_query }}">
+          <input type="hidden" name="date_depart" value="{{ request.POST.date_depart }}">
+          <input type="hidden" name="date_retour" value="{{ request.POST.date_retour }}">
+          <input type="hidden" name="nb_adultes" value="{{ request.POST.nb_adultes }}">
+          <input type="hidden" name="page" value="{{ page|add:"-1" }}">
+          <input type="hidden" name="sort" value="{{ request.POST.sort }}">
+          <button type="submit" class="btn btn-outline-secondary" {% if page|default:"1" == "1" %}disabled{% endif %}>Page précédente</button>
+        </form>
+
+        <form method="post" class="d-inline">
+          {% csrf_token %}
+          <input type="hidden" name="from_query_id" value="{{ request.POST.from_query_id }}">
+          <input type="hidden" name="to_query_id" value="{{ request.POST.to_query_id }}">
+          <input type="hidden" name="from_query" value="{{ request.POST.from_query }}">
+          <input type="hidden" name="to_query" value="{{ request.POST.to_query }}">
+          <input type="hidden" name="date_depart" value="{{ request.POST.date_depart }}">
+          <input type="hidden" name="date_retour" value="{{ request.POST.date_retour }}">
+          <input type="hidden" name="nb_adultes" value="{{ request.POST.nb_adultes }}">
+          <input type="hidden" name="page" value="{{ page|default:"1"|add:"1" }}">
+          <input type="hidden" name="sort" value="{{ request.POST.sort }}">
+          <button type="submit" class="btn btn-outline-primary">Page suivante</button>
+        </form>
+      </div>
+    {% endif %}
+    </div>
+
+
+
+    <script>
+      function setupAutocomplete(inputId, resultContainerId, endpoint) {
+        const input = document.getElementById(inputId);
+        input.addEventListener("input", async () => {
+          const query = input.value;
+          const resultContainer = document.getElementById(resultContainerId);
+          resultContainer.innerHTML = "";
+          if (query.length < 3) return;
+
+          const response = await fetch(`${endpoint}?query=${encodeURIComponent(query)}`);
+          const data = await response.json();
+
+          if (Array.isArray(data.data)) {
+            data.data.forEach((item) => {
+              const option = document.createElement("div");
+              option.className = "autocomplete-item";
+              const label = `${item.name} - ${item.cityName || ""}, ${item.countryName || ""}`;
+              option.textContent = label;
+              option.dataset.id = item.id; // ex: CDG.AIRPORT
+              option.style.cursor = "pointer";
+              option.onclick = () => {
+                input.value = label;
+                const hiddenInput = document.getElementById(inputId + "_id");
+                if (hiddenInput) hiddenInput.value = item.id;
+                resultContainer.innerHTML = "";
+              };
+              resultContainer.appendChild(option);
+            });
+          }
+        });
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        setupAutocomplete("from_query", "from_results", "/api/recherche-vols-destination/");
+        setupAutocomplete("to_query", "to_results", "/api/recherche-vols-destination/");
+        document.querySelector("form").addEventListener("submit", () => {
+          document.getElementById("loader").style.display = "flex";
+        });
+      });
+
+      function loadFlightDetails(token) {
+        const overlay = document.getElementById("flight-detail-overlay");
+        const content = document.getElementById("flight-detail-content");
+        overlay.classList.remove("d-none");
+        content.innerHTML = '<div class="text-center text-muted">Chargement...</div>';
+
+        fetch(`/api/details-vol/?token=${encodeURIComponent(token)}`)
+          .then(res => res.json())
+          .then(data => {
+
+            if (data && data.data && Array.isArray(data.data.segments) && data.data.segments.length > 0) {
+              const segments = data.data.segments;
+              let html = "<h5>Itinéraire :</h5>";
+              if (data.data.priceBreakdown && data.data.priceBreakdown.total) {
+                const total = data.data.priceBreakdown.total;
+                const euros = total.units;
+                const cents = String(total.nanos).padStart(9, '0').slice(0, 2);
+                html += `<p class="fs-5"><strong>Prix total :</strong> ${euros},${cents} ${total.currencyCode}</p>`;
+              }
+
+              segments.forEach((segment, index) => {
+                segment.legs.forEach((leg, legIndex) => {
+                  console.log(leg.flightInfo.carrierInfo.operatingCarrier)
+                  html += `
+                  
+                    <div class="border p-3 mb-3 rounded bg-light">
+                      <p><strong>Vol ${index + 1}.${legIndex + 1} :</strong></p>
+                      <p>
+                        <i class="bi bi-airplane"></i> ${leg.flightInfo.carrierInfo.operatingCarrier}${leg.flightInfo.flightNumber} – 
+                        ${leg.carriersData[0]?.name || ""}<br>
+                        <strong>Départ :</strong> ${leg.departureAirport.cityName} (${leg.departureAirport.code}) à ${leg.departureTime.slice(11, 16)}<br>
+                        <strong>Arrivée :</strong> ${leg.arrivalAirport.cityName} (${leg.arrivalAirport.code}) à ${leg.arrivalTime.slice(11, 16)}<br>
+                        <strong>Classe :</strong> ${leg.cabinClass}
+                      </p>
+                    </div>
+                  `;
+                });
+              });
+
+              // Affichage des extraProducts
+              if (data.data.extraProducts && data.data.extraProducts.length > 0) {
+                html += `<h5 class="mt-4">Options supplémentaires :</h5><ul class="list-group mb-3">`;
+                data.data.extraProducts.forEach(product => {
+                  const labelMap = {
+                    flexibleTicket: "Billet flexible",
+                    checkedInBaggage: "Bagage enregistré",
+                  };
+                  const label = labelMap[product.type] || product.type;
+                  const price = product.priceBreakdown.total;
+                  const euros = price.units;
+                  const cents = String(price.nanos).padStart(9, '0').slice(0, 2);
+
+                  html += `
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                      ${label}
+                      <span class="badge bg-primary rounded-pill">${euros},${cents} ${price.currencyCode}</span>
+                    </li>
+                  `;
+                });
+                html += `</ul>`;
+              }
+
+              // Affichage des offerExtras
+              if (data.data.offerExtras && Object.keys(data.data.offerExtras).length > 0) {
+                html += `<h5 class="mt-4">Offres partenaires :</h5><ul class="list-group mb-3">`;
+                const labelMap = {
+                  flexibleTicket: "Billet flexible"
+                };
+                Object.entries(data.data.offerExtras).forEach(([key, extra]) => {
+                  const label = labelMap[key] || key;
+                  const price = extra.priceBreakdown?.total;
+                  const euros = price?.units ?? 0;
+                  const cents = String(price?.nanos ?? 0).padStart(9, '0').slice(0, 2);
+                  const supplier = extra.supplierInfo?.name ?? "Partenaire";
+
+                  html += `
+                    <li class="list-group-item">
+                      <div class="d-flex justify-content-between">
+                        <div>
+                          <strong>${label}</strong><br/>
+                          <small class="text-muted">Fournisseur : ${supplier}</small>
+                        </div>
+                        <span class="badge bg-secondary">${euros},${cents} ${price?.currencyCode ?? ""}</span>
+                      </div>
+                      <div class="mt-1">
+                        ${extra.supplierInfo?.termsUrl ? `<a href="${extra.supplierInfo.termsUrl}" target="_blank" class="me-2">Conditions</a>` : ""}
+                        ${extra.supplierInfo?.privacyPolicyUrl ? `<a href="${extra.supplierInfo.privacyPolicyUrl}" target="_blank">Confidentialité</a>` : ""}
+                      </div>
+                    </li>
+                  `;
+                });
+                html += `</ul>`;
+              }
+
+              if (data.data) {
+                if (data.data.brandedFareInfo) {
+                  html += `<h5 class="mt-4">Tarif</h5>
+                    <p><strong>${data.data.brandedFareInfo.fareName}</strong> – Classe ${data.data.brandedFareInfo.cabinClass}</p>`;
+
+                  // Affichage des features inclus et non inclus
+                  if (data.data.brandedFareInfo.features && data.data.brandedFareInfo.features.length > 0) {
+                    html += `<h6 class="mt-3">Avantages inclus :</h6><ul class="list-group mb-3">`;
+                    data.data.brandedFareInfo.features.forEach((f) => {
+                      html += `<li class="list-group-item">${f.label}</li>`;
+                    });
+                    html += `</ul>`;
+                  }
+
+                  if (data.data.brandedFareInfo.nonIncludedFeatures && data.data.brandedFareInfo.nonIncludedFeatures.length > 0) {
+                    html += `<h6 class="mt-3">Options non incluses :</h6><ul class="list-group mb-3">`;
+                    data.data.brandedFareInfo.nonIncludedFeatures.forEach((f) => {
+                      html += `<li class="list-group-item text-muted">${f.label}</li>`;
+                    });
+                    html += `</ul>`;
+                  }
+                }
+
+                if (Array.isArray(data.data.fareRules) && data.data.fareRules.length > 0) {
+                  html += `<h5 class="mt-4">Conditions tarifaires</h5><ul class="list-group mb-3">`;
+                  data.data.fareRules.forEach(rule => {
+                    const desc = rule.description || "Condition non spécifiée";
+                    html += `<li class="list-group-item">${desc}</li>`;
+                  });
+                  html += `</ul>`;
+                }
+
+                if (data.data.includedProducts && data.data.includedProducts.segments) {
+                  html += `<h5 class="mt-4">Produits inclus</h5><ul class="list-group mb-3">`;
+                  data.data.includedProducts.segments.forEach((prod, index) => {
+                    html += `<li class="list-group-item">Segment ${index + 1} : ${prod.type || 'Produit inclus'}</li>`;
+                  });
+                  html += `</ul>`;
+                }
+
+                if (data.data.seatAvailability && data.data.seatAvailability.numberOfSeatsAvailable !== undefined) {
+                  html += `<p><strong>Places restantes :</strong> ${data.data.seatAvailability.numberOfSeatsAvailable}</p>`;
+                }
+              }
+
+              content.innerHTML = html;
+            } else {
+              content.innerHTML = "<p class='text-danger'>Aucune donnée disponible pour ce vol.</p>";
+            }
+          })
+          .catch(() => {
+            content.innerHTML = "<p class='text-danger'>Erreur lors de la récupération des détails.</p>";
+          });
+      }
+
+      function closeFlightDetail() {
+        document.getElementById("flight-detail-overlay").classList.add("d-none");
+      }
+      function resetAirport(fieldId) {
+        document.getElementById(fieldId).value = '';
+        const hiddenId = fieldId + '_id';
+        const hiddenInput = document.getElementById(hiddenId);
+        if (hiddenInput) {
+          hiddenInput.value = '';
+        }
+      }
+    </script>
+
+    <!-- Overlay pour détails du vol -->
+    <div id="flight-detail-overlay" class="position-fixed top-0 start-0 w-100 h-100 bg-white bg-opacity-90 d-none" style="z-index: 1050; overflow-y: auto;">
+      <div class="container py-5">
+        <div class="d-flex justify-content-between mb-3">
+          <h4>Détails du vol</h4>
+          <button class="btn-close" onclick="closeFlightDetail()"></button>
+        </div>
+        <div id="flight-detail-content" class="animate__animated animate__fadeIn">
+          <div class="text-center text-muted">Chargement...</div>
+        </div>
+      </div>
+    </div>
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+    <script>
+      AOS.init();
+    </script>
+  </body>
+</html>

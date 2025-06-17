@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+  </head>
+  <body>
+    <form method="post">
+      {% csrf_token %} Destination :
+      <input type="text" name="destination" /><br />
+      Date d'arrivée : <input type="date" name="checkin" /><br />
+      Date de départ : <input type="date" name="checkout" /><br />
+      <button type="submit">Rechercher</button>
+    </form>
+
+    {% if resultats %}
+    <h2>Résultats pour {{ destination }} :</h2>
+    <ul>
+      {% for hotel in resultats %}
+      <li>
+        {{ hotel.hotel_name }} - {{ hotel.price ? hotel.price.total : "Prix non
+        dispo" }}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </body>
+</html>
